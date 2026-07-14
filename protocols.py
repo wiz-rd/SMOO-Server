@@ -59,7 +59,7 @@ class Cappy:
         position: Vector3 = Vector3(),
         rotation: Quaternion = Quaternion(),
         out: bool = False,
-        animation: str = None,
+        animation: str | None = None,
     ):
         self.pos = position
         self.rot = rotation
@@ -72,7 +72,9 @@ class Cappy:
 
 
 class Mario:
-    def __init__(self, head: str = None, body: str = None):
+    __slots__ = ("head", "body")
+
+    def __init__(self, head: str, body: str):
         self.head = head
         self.body = body
 
@@ -101,20 +103,25 @@ class FastServerProtocol(asyncio.Protocol):
 
     def __init__(self, server_state):
         # initialize everything
-        self.server_state = server_state
-        self.transport = None
+        self.server_state: dict = server_state
+        self.transport: asyncio.BaseTransport | None = None
         # IP and port
-        self.peername = None
-        self.username = None
-        self.user_id = None
-        self.is_first_packet = True
-        self.coordinates = Vector3()
-        self.cappy = Cappy()
+        self.peername: tuple[str, int] | None = None
+        self.username: str | None = None
+        self.user_id: str | None = None
+        self.is_first_packet: bool = True
+        self.coordinates: Vector3 = Vector3()
+        self.cappy: Cappy = Cappy()
 
     # upon initial connection, the client expects what back?
     def connection_made(self, transport):
         self.transport = transport
         self.peername = transport.get_extra_info("peername")
+
+        if self.peername is None:
+            raise ConnectionError(
+                "Client attempt failed. No extra info as to why but we can't get IP or port."
+            )
 
         ip_address = self.peername[0]  # (ip, port)
 
@@ -150,9 +157,10 @@ class FastServerProtocol(asyncio.Protocol):
             self.is_first_packet = False
 
         # get and dissect the header packet
-        uid, packet_type_id, _, payload = packets.load_header(data)
+        # we're discarding packet size and the data after the payload
+        uid, packet_type_id, _, payload, _ = packets.load_header(data)
 
-        packet_class = packets.PACKET_TYPES[int(packet_type_id)]
+        packet_class: packets.Packet = packets.PACKET_TYPES[int(packet_type_id)]  # type: ignore
 
         # NOTE: debugging
         # print(f"we got uid: {uid}")
@@ -216,13 +224,17 @@ class FastServerProtocol(asyncio.Protocol):
 
     def handle_connect(
         self, packet: packets.ConnectPacket, uid: str
-    ) -> packets.InitPacket:
+    ) -> packets.InitPacket | None:
         """Handle connect packets from client by responding with an Init packet."""
         if (
             len(FastServerProtocol.active_connections)
             < self.server_state["max_players"]
         ):
             print(f"Client {self.username} tried to connect but the server is full!")
+            return
+
+        # if we have no connection at all (mostly for type checking)
+        if self.transport is None:
             return
 
         # give this connection the right UID if they don't already have it setup
@@ -240,7 +252,12 @@ class FastServerProtocol(asyncio.Protocol):
                 self.user_id + "...",
             )
 
-        ip_address = self.peername[0]
+        if self.peername:
+            ip_address = self.peername[0]
+        else:
+            self.peername = self.transport.get_extra_info("peername")
+
+            raise ConnectionError("Unable to determine IP address.")
 
         # if their username is banned, reject it
         if self.username in self.server_state["bans"]["usernames"]:
@@ -321,7 +338,7 @@ class FastServerProtocol(asyncio.Protocol):
         FastServerProtocol.active_connections.remove(self)
 
         # generate a complete disconnect packet
-        disc_packet = packets.prepare_packet(packets.DisconnectPacket())
+        disc_packet = packets.prepare_packet(self.user_id, packets.DisconnectPacket())
 
         for client in FastServerProtocol.active_connections:
             client.transport.write(disc_packet)
@@ -336,7 +353,7 @@ class FastServerProtocol(asyncio.Protocol):
         if exc:
             print(f"due to error:\n\n{exc}")
 
-    def reject(self, reason: str | bytes = None, ignore: bool = False):
+    def reject(self, reason: str | bytes = "", ignore: bool = False):
         """Rejects a client for any reason. NOTE: For now, just closes the connection."""
         if reason:
             print("Rejected client,", self.peername, "for:", reason)
@@ -369,9 +386,3 @@ class FastServerProtocol(asyncio.Protocol):
                     },
                 }
             )
-
-
-print("Testing Cappy dicts:")
-
-for i in range(100):
-    print(Cappy(animation=i).dump())

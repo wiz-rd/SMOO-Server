@@ -106,11 +106,11 @@ class Packet(Protocol):
 
     def serialize(self) -> bytes:
         """Convert this packet into bytes to be sent to the client."""
-        ...
+        raise NotImplementedError
 
-    def deserialize(self, data: bytes):
+    def deserialize(self, data: bytes) -> None:
         """Loads `data` into this packet object."""
-        ...
+        raise NotImplementedError
 
 
 class CapPacket(Packet):
@@ -136,10 +136,10 @@ class CapPacket(Packet):
 
     def __init__(
         self,
-        position: Vector3 = None,
-        rotation: Quaternion = None,
-        cap_out: bool = False,
-        cap_anim: str = None,
+        position: Vector3,
+        rotation: Quaternion,
+        cap_out: bool,
+        cap_anim: str,
     ):
         self.position = position
         self.rotation = rotation
@@ -166,7 +166,7 @@ class CapPacket(Packet):
         )
 
     def deserialize(self, data: bytes):
-        unpacked = struct.unpack(CapPacket.FORMAT, data[: self.size])
+        unpacked = struct.unpack(CapPacket.FORMAT, data[: CapPacket.SIZE])
 
         self.position = Vector3(*unpacked[3:])
         self.rotation = Quaternion(*unpacked[3:7])
@@ -183,7 +183,7 @@ class CapturePacket(Packet):
     # SIZE = constants.COSTUME_NAME_SIZE
     TYPE: int = PacketType.CAPTURE
 
-    def __init__(self, model_name: str = None):
+    def __init__(self, model_name: str):
         self.model_name = model_name
 
     def serialize(self) -> bytes:
@@ -197,7 +197,7 @@ class CapturePacket(Packet):
         # end of the alloted amount. Then converting the bytes given to a str
         # and removing null bytes at the end.
         self.model_name = (
-            struct.unpack(CapturePacket.FORMAT, data[: constants.COSTUME_NAME_SIZE])
+            struct.unpack(CapturePacket.FORMAT, data[: constants.COSTUME_NAME_SIZE])[0]
             .decode("utf-8")
             .rstrip("\x00")
         )
@@ -286,7 +286,7 @@ class ConnectPacket(Packet):
         self,
         connection_type: ConnectionTypes = ConnectionTypes.FIRST_CONNECTION,
         max_players: int = 0,
-        client_name: str = None,
+        client_name: str | None = None,
     ):
         self.connection_type = connection_type
         self.max_players = max_players
@@ -297,6 +297,9 @@ class ConnectPacket(Packet):
     #     return self.SIZE_OFFSET + constants.COSTUME_NAME_SIZE
 
     def serialize(self) -> bytes:
+        if self.client_name is None:
+            raise ValueError("The client name for this packet was never set!")
+
         # encode this to utf-8
         name_bytes = self.client_name.encode()
 
@@ -318,7 +321,7 @@ class ConnectPacket(Packet):
         """
         # unpack the data, cutting off at the max size allowed
         conn_type_raw, self.max_players, name_bytes = struct.unpack(
-            ConnectPacket.FORMAT, data[: self.size]
+            ConnectPacket.FORMAT, data[: ConnectPacket.SIZE]
         )
 
         # convert it
@@ -357,6 +360,7 @@ class DisconnectPacket(Packet):
     NAME: str = "DISCONNECT"
     SIZE: int = 0
     TYPE: int = PacketType.DISCONNECT
+    FORMAT: str
 
     # should be an empty packet
     def serialize(self):
@@ -402,6 +406,7 @@ class InitPacket(Packet):
     NAME: str = "INIT"
     SIZE: int = 2
     TYPE: int = 1
+    FORMAT: str = "<H"
 
     def __init__(self, max_players: int = 0):
         self.max_players = max_players
@@ -412,11 +417,11 @@ class InitPacket(Packet):
 
     def serialize(self) -> bytes:
         """Serialize this init packet for delivery."""
-        return struct.pack("<H", self.max_players)
+        return struct.pack(InitPacket.FORMAT, self.max_players)
 
     def deserialize(self, data: bytes):
         """Decode an init packet from the client? I don't know if we'll need this."""
-        self.max_players = struct.unpack("<H", data[: self.size])[0]
+        self.max_players = struct.unpack(InitPacket.FORMAT, data[: InitPacket.SIZE])[0]
 
 
 class PlayerPacket(Packet):
@@ -455,8 +460,8 @@ class PlayerPacket(Packet):
 
     def deserialize(self, data: bytes):
         unpacked = struct.unpack(PlayerPacket.FORMAT, data[: PlayerPacket.SIZE])
-        self.pos = Vector3(unpacked[:3])
-        self.rot = Quaternion(unpacked[3:7])
+        self.pos = Vector3(*unpacked[:3])
+        self.rot = Quaternion(*unpacked[3:7])
         self.anim_weights = list(unpacked[7:13])
         self.act = unpacked[13]
         self.sub_act = unpacked[14]
@@ -548,6 +553,7 @@ class UnhandledPacket:
 
     # TODO: serialize and deserialize?
 
+
 PACKET_TYPES = bidict(
     {
         # TODO: add the names of each packet to their objects as I add them here
@@ -587,7 +593,7 @@ PACKET_TYPES = bidict(
 # )
 
 
-def load_header(data: bytes, return_remnant_data: bool):
+def load_header(data: bytes) -> tuple[str, int, int, bytes, bytes]:
     """Deserializes the header from `data`. I hope.
 
     Args:
@@ -602,37 +608,31 @@ def load_header(data: bytes, return_remnant_data: bool):
     - `packet_size`
     - `remaining_packet`
         - The data left in the packet up until `packet_size`.
-    - `remaining_data` (if `return_remnant_data` is true)
+    - `remaining_data`
+        - All data remaining - even after `packet_size`. Probably
+            mostly null bytes.
     """
-    # we're just going to pray that the header is 2 16-bit unsigned integers
-    # because the only reference we have for it has absolutely no size:
-    # https://github.com/Sanae6/SmoOnlineServer/blob/master/Shared/Constants.cs#L23
-
-    # the only reason I'm guessing this at all is because of the Rust implementation:
-    # https://github.com/speyejack/smo-multi-rs/blob/json-api/src/net/header.rs#L9
+    # Typical packet headers follow:
+    #
+    # 16 bytes - UID
+    # 2 bytes - packet type (i/u16 bit int)
+    # 2 bytes - packet size (i/u16 bit int)
+    #
+    # packet_header =/= TCP header
 
     packet_header = data[: constants.TOTAL_HEADER]
     uid, packet_type, packet_size = struct.unpack(
         constants.HEADER_FORMAT, packet_header
     )
-    # packet_header =/= TCP header
 
-    if not return_remnant_data:
-        return (
-            uid,
-            packet_type,
-            packet_size,
-            data[constants.TOTAL_HEADER : constants.TOTAL_HEADER + packet_size],
-        )
-    else:
-        return (
-            uid,
-            packet_type,
-            packet_size,
-            data[constants.TOTAL_HEADER : constants.TOTAL_HEADER + packet_size],
-            # remnant data
-            data[: constants.TOTAL_HEADER + packet_size],
-        )
+    return (
+        uid.decode(),
+        packet_type,
+        packet_size,
+        data[constants.TOTAL_HEADER : constants.TOTAL_HEADER + packet_size],
+        # remnant data
+        data[: constants.TOTAL_HEADER + packet_size],
+    )
 
 
 def generate_header(uid: str | bytes, packet: Packet) -> bytes:
@@ -641,12 +641,19 @@ def generate_header(uid: str | bytes, packet: Packet) -> bytes:
         uid = uid.encode()
 
     return struct.pack(
-        constants.HEADER_FORMAT, uid, PACKET_TYPES.inv[type(packet)], packet.SIZE
+        constants.HEADER_FORMAT,
+        uid,
+        # this is using the bidict library so Pylance doesn't understand it
+        PACKET_TYPES.inv[type(packet)],  # type: ignore
+        packet.SIZE,
     )
 
 
-def prepare_packet(uid: str | bytes, packet: Packet) -> bytes:
+def prepare_packet(uid: str | bytes | None, packet: Packet) -> bytes:
     """Prepares and serializes a whole packet, header and all."""
+    if uid is None:
+        raise ValueError("UID cannot be None. A UID is needed to serialize a packet.")
+
     if isinstance(uid, str):
         uid = uid.encode()
 
