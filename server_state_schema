@@ -13,12 +13,13 @@ The server state should follow this structure:
 
 - max players (int)
 
-- users
-    - id (str)
-    - data
+- users (dict)
+    - id (str - key)
+    - data (Player - value)
         - username (str)
         - coordinates (Vector3)
         - cappy data (dict OR empty dict, depending on if Cappy is out or not)
+            (can also be Cappy object)
             - cappy anim (str)
             - cappy coords (Vector3)
             - cappy rot (Quaternion)

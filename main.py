@@ -17,7 +17,9 @@ async def main():
     # PREPARE AND READ THE CONFIG #
     ###############################
 
+    # default config directory
     config_file: Path = Path("./config.toml")
+    # automatically create the config file if it doesn't exist already
     config_contents = prepare_config(config_file)
 
     if not config_contents:
@@ -28,7 +30,7 @@ async def main():
         )
         config_contents = DEFAULT_TOML
 
-    # automatically create the config file if it doesn't exist already
+    # try and read the config file, if we have issues, let the user know
     try:
         config: dict = tomllib.loads(config_contents)
     except tomllib.TOMLDecodeError as exc:
@@ -65,7 +67,7 @@ async def main():
             "ips": set(nested_get(config, "user", "ips", "whitelist", default=())),
         },
         "max_players": nested_get(config, "config", "max_players"),
-        "users": set(),
+        "users": {},
     }
 
     #############################
@@ -81,6 +83,7 @@ async def main():
     # get the port. Default to 1027
     port = nested_get(config, "network", "port", default=1027)
 
+    # let the game factory use a shared server state that we can access here, too
     game_protocol_factory = partial(FastServerProtocol, shared_server_state)
     # NOTE: may have to set keep_alive to False
     game_server = await loop.create_server(game_protocol_factory, host=ip, port=port)
@@ -98,7 +101,8 @@ async def main():
         # wait until either the server crashes or the user types exit in the console
         _, pending = await asyncio.wait(
             [server_task, terminal_task],
-            return_when=asyncio.FIRST_COMPLETED
+            # exit if the server crashes or the user types ctrl+c
+            return_when=asyncio.FIRST_COMPLETED,
         )
 
         # shut everything down
@@ -106,6 +110,7 @@ async def main():
             task.cancel()
 
 
+# if this file is not being imported, then continue
 if __name__ == "__main__":
     # use libuv in the background - should be much faster than base asyncio
     uvloop.run(main())

@@ -131,10 +131,10 @@ class CapPacket(Packet):
 
     def __init__(
         self,
-        position: Vector3,
-        rotation: Quaternion,
-        cap_out: bool,
-        cap_anim: str,
+        position: Vector3 = Quaternion(),
+        rotation: Quaternion = Quaternion(),
+        cap_out: bool = False,
+        cap_anim: str = "",
     ):
         self.position = position
         self.rotation = rotation
@@ -178,7 +178,7 @@ class CapturePacket(Packet):
     # SIZE = constants.COSTUME_NAME_SIZE
     TYPE: int = PacketType.CAPTURE
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str = ""):
         self.model_name = model_name
 
     def serialize(self) -> bytes:
@@ -211,7 +211,11 @@ class ChangeStagePacket(Packet):
     FORMAT: str = f"<{STAGE_SIZE}s{ID_SIZE}siB"
 
     def __init__(
-        self, stage: str, stage_id: str, scenario: int = 0, sub_scenario_type: int = 0
+        self,
+        stage: str = "",
+        stage_id: str = "",
+        scenario: int = 0,
+        sub_scenario_type: int = 0,
     ):
         # string
         self.stage = stage
@@ -274,8 +278,8 @@ class ConnectPacket(Packet):
     # struct format:
     # i = 4-byte integer (ConnectionType)
     # H = 2-byte unsigned short (MaxPlayers)
-    # s = char[] bytes padded/truncated to COSTUME_NAME_SIZE (ClientName)
-    FORMAT: str = f"<iH{constants.COSTUME_NAME_SIZE}s"
+    # s = char[] bytes padded/truncated to CLIENT_NAME_SIZE (ClientName)
+    FORMAT: str = f"<iH{constants.CLIENT_NAME_SIZE}s"
 
     def __init__(
         self,
@@ -333,7 +337,7 @@ class CostumePacket(Packet):
     FORMAT: str = f"<{constants.COSTUME_NAME_SIZE}s{constants.COSTUME_NAME_SIZE}s"
     TYPE: int = PacketType.COSTUME
 
-    def __init__(self, body_name: str, cap_name: str):
+    def __init__(self, body_name: str = "", cap_name: str = ""):
         self.body = body_name
         self.cap = cap_name
 
@@ -435,9 +439,10 @@ class PlayerPacket(Packet):
 
     def __init__(
         self,
-        position: Vector3,
-        rotation: Quaternion,
-        animation_blend_weights: list[float],
+        position: Vector3 = Vector3(),
+        rotation: Quaternion = Quaternion(),
+        # initialize this to nothing, too
+        animation_blend_weights: list[float] = [0, 0, 0, 0, 0, 0],
         act: int = 0,
         sub_act: int = 0,
     ):
@@ -451,7 +456,7 @@ class PlayerPacket(Packet):
         self.sub_act = sub_act
 
     def serialize(self) -> bytes:
-        return struct.pack(PlayerPacket.FORMAT, self.dump())
+        return struct.pack(PlayerPacket.FORMAT, *self.dump())
 
     def deserialize(self, data: bytes):
         unpacked = struct.unpack(PlayerPacket.FORMAT, data[: PlayerPacket.SIZE])
@@ -614,7 +619,7 @@ def load_header(data: bytes) -> tuple[str, int, int, bytes, bytes]:
     )
 
     return (
-        uid.decode(),
+        uid.hex(),
         packet_type,
         packet_size,
         data[constants.TOTAL_HEADER : constants.TOTAL_HEADER + packet_size],

@@ -1,5 +1,7 @@
 import asyncio
 
+from rich import print as pprint
+
 import constants
 import packets
 from math_classes import Vector3, Quaternion
@@ -47,6 +49,20 @@ from math_classes import Vector3, Quaternion
 #             return
 
 
+class Player:
+    __slots__ = ("name", "pos", "cappy")
+
+    def __init__(self, name: str, position: Vector3, cappy: Cappy):
+        self.name = name
+        self.pos = position
+        self.cappy = cappy
+
+    def dump(self) -> tuple[str, Vector3]:
+        """Dumps this object's attributes, `name`, `pos`, and `cappy` as a 1d tuple."""
+        # this is meant to be used when serializing the data to be sent back
+        return self.name, self.pos, *self.cappy.dump()
+
+
 # NOTE: remove the Cappy and Mario classes if this is slow
 # swap to just a list and use a schematic to show what's what?
 class Cappy:
@@ -57,7 +73,7 @@ class Cappy:
         position: Vector3 = Vector3(),
         rotation: Quaternion = Quaternion(),
         out: bool = False,
-        animation: str | None = None,
+        animation: str = "",
     ):
         self.pos = position
         self.rot = rotation
@@ -77,11 +93,11 @@ class Mario:
         self.body = body
 
     def update(self, head: str, body: str):
-        """Update the head and body of Mario."""
+        """Update the `head` and `body` of Mario."""
         self.head, self.body = head, body
 
-    def dump(self):
-        """Dump the head and body attributes in that order."""
+    def dump(self) -> tuple[str, str]:
+        """Dump the `head` and `body` attributes in that order."""
         return self.head, self.body
 
 
@@ -153,36 +169,59 @@ class FastServerProtocol(asyncio.Protocol):
 
         # get and dissect the header packet
         # we're discarding packet size and the data after the payload
-        uid, packet_type_id, _, payload, _ = packets.load_header(data)
+        uid, packet_type_id, db_packet_size, payload, _ = packets.load_header(data)
+
+        # if we don't already have one, set this user_id up
+        if not self.user_id:
+            self.user_id = uid
+
+        if self.user_id != uid:
+            print(
+                "The UID of this transaction has changed. Something very weird is going on."
+            )
+            print("Deleting this connection and (hopefully) resetting.")
+            self.reject()
 
         packet_class: packets.Packet = packets.PACKET_TYPES[int(packet_type_id)]  # type: ignore
 
-        # NOTE: debugging
-        # print(f"we got uid: {uid}")
-        # print(f"we got packet id: {packet_type_id}")
-        # print(f"we got packet size: {packet_size}")
+        # TODO: delete debugging
+        print("Recieved data:")
+
+        print(f"we got uid: {uid}")
+        print(f"we got packet id: {packet_type_id}")
+        print(f"we got packet size: {db_packet_size}")
         # print(f"In the data: {data[: constants.TOTAL_HEADER]}")
 
         # print(f"Payload of {payload}")
-        # print(f"{data=}")
 
-        # print(f"Projected class: {packet_class}")
-        # print(f"Projected name: {packet_class.NAME}")
+        print(f"Projected class: {packet_class}")
+        print(f"Projected name: {packet_class.NAME}")
 
         # if we don't have a class for it defined, so we're behind or it doesn't exist
         # TODO: handle this better
         if not packet_class:
             return
 
+        # create an instance of this object.
+        # packet_class is just the class itself,
+        # not an actual object yet, so we can't
+        # assign some of the stuff we normally do to it
         packet = packet_class()
+        # load the packet data into itself
+        # so if it's a CapturePacket, load the
+        # capture name into packet.model_name, for example
         packet.deserialize(payload)
 
         # TODO: make one of these for each type of packet OR determine a way to do this psuedo-dynamically (probably impossible)
-        match packet_type_id:
+        match packet:
             case packets.ConnectPacket():
-                self.handle_connect(packet, uid)
+                self.handle_connect(packet)
             case packets.InitPacket():
-                ...
+                # I have yet to confirm it but I suspect that
+                # we should not be receiving packets of this type
+                pass
+            case packets.PlayerPacket():
+                self.handle_player(packet)
             case packets.DisconnectPacket():
                 self.disconnect_self()
             case _:
@@ -190,6 +229,7 @@ class FastServerProtocol(asyncio.Protocol):
                 # self.reject()
                 # TODO: change this
                 # NOTE: can use the UnhandledPacket object for this
+                print("Packet not setup yet or is not valid.")
                 return
 
         # if self.is_first_packet:
@@ -217,15 +257,24 @@ class FastServerProtocol(asyncio.Protocol):
     # PACKET HANDLING HERE #
     ########################
 
+    ######
+    # CONNECT
+    ######
+
     def handle_connect(
         self, packet: packets.ConnectPacket, uid: str
     ) -> packets.InitPacket | None:
         """Handle connect packets from client by responding with an Init packet."""
         if (
             len(FastServerProtocol.active_connections)
-            < self.server_state["max_players"]
+            >= self.server_state["max_players"]
         ):
-            print(f"Client {self.username} tried to connect but the server is full!")
+            print(
+                "Client",
+                self.username if self.username else self.peername[0],
+                "tried to connect but the server is full!",
+            )
+            print(self.server_state)
             return
 
         # if we have no connection at all (mostly for type checking)
@@ -263,19 +312,18 @@ class FastServerProtocol(asyncio.Protocol):
             self.reject()
             return
 
-        print(f"Player {self.username} connected.")
+        pprint(f"[green]Player [blue]{self.username}[/blue] connected.")
 
         # TODO: make sure this reply works
+        # NOTE: Tested, it does seem to work.
         serialized_packet = packets.prepare_packet(
             self.user_id, packets.InitPacket(self.server_state["max_players"])
         )
 
-        # NOTE: delete this if we don't need it - test it first
-        # partial_header = struct.pack(
-        #     "<HH", PACKET_TYPES.inverse[packets.InitPacket], len(serialized_packet)
-        # )
+        FastServerProtocol.active_connections.add(self)
 
-        # full_packet = partial_header + serialized_packet
+        # TODO: delete debugging
+        pprint(self.server_state)
 
         # send the Init packet to the client
         self.transport.write(serialized_packet)
@@ -284,6 +332,9 @@ class FastServerProtocol(asyncio.Protocol):
 
         # update all clients that someone connected
         for client in FastServerProtocol.active_connections:
+            if client == self:
+                continue
+
             client.transport.write(
                 packets.prepare_packet(
                     self.user_id,
@@ -306,7 +357,19 @@ class FastServerProtocol(asyncio.Protocol):
                 )
             )
 
-    # def handle_init()
+    ######
+    # PLAYER
+    ######
+
+    def handle_player(self, packet: packets.PlayerPacket, uid: str):
+        """Handle the player packet. It's expected to already be serialized."""
+        # the packet should already have a lot of the information we need
+        # already loaded into it because of the serialize method
+        # so first, let's update the shared state
+        # let's refer to the ./server_state_schema file for this
+        self.server_state["users"][self.user_id] = {"data": Player}
+        ...
+        # TODO: finish
 
     ####################
     # REST OF PROTOCOL #
@@ -342,8 +405,12 @@ class FastServerProtocol(asyncio.Protocol):
         self.transport.close()
 
     def connection_lost(self, exc):
-        FastServerProtocol.active_connections.remove(self)
-        print(f"Client disconnected: {self.peername}")
+        if self in FastServerProtocol.active_connections:
+            FastServerProtocol.active_connections.remove(self)
+            print(f"Client disconnected: {self.peername}")
+        else:
+            # NOTE: this shouldn't happen often, hence the confusion
+            print("Connection lost after not being truly established?\t", end="")
 
         if exc:
             print(f"due to error:\n\n{exc}")
@@ -353,7 +420,8 @@ class FastServerProtocol(asyncio.Protocol):
         if reason:
             print("Rejected client,", self.peername, "for:", reason)
 
-        FastServerProtocol.active_connections.remove(self)
+        if self in FastServerProtocol.active_connections:
+            FastServerProtocol.active_connections.remove(self)
 
         if not ignore:
             self.transport.close()

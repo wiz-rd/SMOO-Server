@@ -1,5 +1,7 @@
 # what even is this? I don't know
 COSTUME_NAME_SIZE = 0x20
+# the name of the client. Different from the UID.
+CLIENT_NAME_SIZE = COSTUME_NAME_SIZE
 
 ########
 # header information
