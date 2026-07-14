@@ -15,11 +15,13 @@ The server state should follow this structure:
 
 - users (dict)
     - id (str - key)
-    - data (Player - value)
+    - Player (Player obj - value)
         - username (str)
-        - coordinates (Vector3)
-        - cappy data (dict OR empty dict, depending on if Cappy is out or not)
-            (can also be Cappy object)
+        - PlayerPacket
+            - player anim weights (list[float])
+            - player coords (Vector3)
+            - player rot (Quaternion)
+        - CappyPacket
             - cappy anim (str)
             - cappy coords (Vector3)
             - cappy rot (Quaternion)

@@ -131,7 +131,7 @@ class CapPacket(Packet):
 
     def __init__(
         self,
-        position: Vector3 = Quaternion(),
+        position: Vector3 = Vector3(),
         rotation: Quaternion = Quaternion(),
         cap_out: bool = False,
         cap_anim: str = "",

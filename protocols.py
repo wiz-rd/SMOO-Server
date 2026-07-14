@@ -50,39 +50,22 @@ from math_classes import Vector3, Quaternion
 
 
 class Player:
-    __slots__ = ("name", "pos", "cappy")
-
-    def __init__(self, name: str, position: Vector3, cappy: Cappy):
-        self.name = name
-        self.pos = position
-        self.cappy = cappy
-
-    def dump(self) -> tuple[str, Vector3]:
-        """Dumps this object's attributes, `name`, `pos`, and `cappy` as a 1d tuple."""
-        # this is meant to be used when serializing the data to be sent back
-        return self.name, self.pos, *self.cappy.dump()
-
-
-# NOTE: remove the Cappy and Mario classes if this is slow
-# swap to just a list and use a schematic to show what's what?
-class Cappy:
-    __slots__ = ("anim", "pos", "rot", "out")
+    """This class houses all of the packets relevant to players for easy retrieval."""
+    __slots__ = ("name", "packet", "cappy", "costume", "game")
 
     def __init__(
         self,
-        position: Vector3 = Vector3(),
-        rotation: Quaternion = Quaternion(),
-        out: bool = False,
-        animation: str = "",
+        name: str,
+        packet = packets.PlayerPacket(),
+        cappy = packets.CapPacket(),
+        costume = packets.CostumePacket(),
+        game = packets.GamePacket(),
     ):
-        self.pos = position
-        self.rot = rotation
-        self.out = out
-        self.anim = animation
-
-    def dump(self):
-        """Returns the `pos`, `rot`, `cap_out`, and `animation` attributes in that order."""
-        return *self.pos.dump(), *self.rot.dump(), self.out, self.anim
+        self.name = name
+        self.packet = packet
+        self.cappy = cappy
+        self.costume = costume
+        self.game = game
 
 
 class Mario:
@@ -122,7 +105,6 @@ class FastServerProtocol(asyncio.Protocol):
         self.user_id: str | None = None
         self.is_first_packet: bool = True
         self.coordinates: Vector3 = Vector3()
-        self.cappy: Cappy = Cappy()
 
     # upon initial connection, the client expects what back?
     def connection_made(self, transport):
@@ -152,7 +134,7 @@ class FastServerProtocol(asyncio.Protocol):
             return
 
         # TODO: delete this data to have a bit more privacy for clients?
-        print(f"Client requested to connect: {self.peername}")
+        pprint(f"Client requested to connect: [yellow]{self.peername}")
 
     def data_received(self, data: bytes):
         """Process recieved data - parse the SMOO packet header and call the proper method."""
@@ -222,6 +204,10 @@ class FastServerProtocol(asyncio.Protocol):
                 pass
             case packets.PlayerPacket():
                 self.handle_player(packet)
+            case packets.CostumePacket():
+                self.handle_costume(packet)
+            case packets.GamePacket():
+                self.handle_game(packet)
             case packets.DisconnectPacket():
                 self.disconnect_self()
             case _:
@@ -254,6 +240,30 @@ class FastServerProtocol(asyncio.Protocol):
         # self.handle_custom_packet(data)
 
     ########################
+    # UTILITY METHODS HERE #
+    ########################
+
+    def get_player(self, generate_anew: bool = True) -> Player | None:
+        """Get player data if it exists in the shared state and generate a new player if it doesn't."""
+        # refer to ./server_state_schema for this
+        # type hint to use this variable easier
+        # get a player if they exist or make a new one if they don't
+        return self.server_state["users"].get(
+            self.user_id,
+            # make a new player if requested, otherwise don't
+            Player(self.username) if generate_anew else None,
+        )
+
+    def set_player(
+        self, player: Player, broadcast: bool = False, include_self: bool = False
+    ):
+        """Sets the player in the shared state."""
+        self.server_state["users"][self.user_id] = player
+
+        if broadcast:
+            self.broadcast(include_self)
+
+    ########################
     # PACKET HANDLING HERE #
     ########################
 
@@ -261,9 +271,7 @@ class FastServerProtocol(asyncio.Protocol):
     # CONNECT
     ######
 
-    def handle_connect(
-        self, packet: packets.ConnectPacket, uid: str
-    ) -> packets.InitPacket | None:
+    def handle_connect(self, packet: packets.ConnectPacket) -> None:
         """Handle connect packets from client by responding with an Init packet."""
         if (
             len(FastServerProtocol.active_connections)
@@ -280,10 +288,6 @@ class FastServerProtocol(asyncio.Protocol):
         # if we have no connection at all (mostly for type checking)
         if self.transport is None:
             return
-
-        # give this connection the right UID if they don't already have it setup
-        if not self.user_id:
-            self.user_id = uid
 
         # give this connection the right username if they don't already have it setup
         if not self.username:
@@ -361,15 +365,57 @@ class FastServerProtocol(asyncio.Protocol):
     # PLAYER
     ######
 
-    def handle_player(self, packet: packets.PlayerPacket, uid: str):
+    def handle_player(self, packet: packets.PlayerPacket):
         """Handle the player packet. It's expected to already be serialized."""
         # the packet should already have a lot of the information we need
         # already loaded into it because of the serialize method
-        # so first, let's update the shared state
+        # so first, let's get the shared state if it exists
         # let's refer to the ./server_state_schema file for this
-        self.server_state["users"][self.user_id] = {"data": Player}
-        ...
-        # TODO: finish
+        # type hint to use this variable easier
+        # ---
+        player: Player = self.get_player()
+
+        # update the player packet itself
+        # essentially, we're discarding old player packet data BUT
+        # retaining old Cappy and costume data, if they exist
+        player.packet = packet
+
+        # TODO: determine - do we even need to *store* the player location in RAM?
+        # Obviously, we need to temporarily to pass it on to other players, but
+        # why store it at all beyond that? Should take hardly any additional RAM
+        # and add nice redundancy if players disconnect temporarily, but almost all
+        # player data should be updated upon a reconnect anyway, so
+        self.set_player(player)
+        # broadcast=True would also work, but I'm leaving it off
+        # to have slightly cleaner comments in this method
+
+        # announce to everyone the new details of the player
+        self.broadcast(player.packet)
+
+    ######
+    # COSTUME
+    ######
+
+    def handle_costume(self, packet: packets.CostumePacket):
+        """Handles costume packets and broadcasts them as needed."""
+        # see self.handle_player() for how this function works
+        # and server_state_schema for the layout
+        player: Player = self.get_player()
+        player.costume = packet
+        self.set_player(player, broadcast=True)
+
+    ######
+    # GAME
+    ######
+
+    def handle_game(self, packet: packets.GamePacket):
+        """Handles the game packet and broadcasts it as needed."""
+        # see self.handle_player() for step-by-step comments
+        # not going to type hint anymore because get_player()
+        # only returns two types anyway
+        player = self.get_player()
+        player.game = packet
+        self.set_player(player, True)
 
     ####################
     # REST OF PROTOCOL #
