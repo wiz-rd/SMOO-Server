@@ -1,0 +1,71 @@
+[config]
+# enable this to use a whitelist. A banlist will still work with a whitelist active
+use_whitelist = false
+# ignore users (don't immediately disconnect them) if they're banned or not on the whitelist
+ignore_disallowed_users = false
+
+# turn this down to 6 to always have capture sync on. Over 8 disables capture sync entirely
+max_players = 8
+
+# let players see each other even if they're not at the same part of the story
+merge_scenarios = true
+
+
+[network]
+# set IP to "0.0.0.0" (with quotes) unless you know what you're doing
+ip = "0.0.0.0"
+port = 1027
+
+[user.names]
+# ban specific names (even if they're on the whitelist)
+banned = ["ben", "tom"]
+# allow only specific names
+whitelist = []
+
+[user.ids]
+# same as usernames but for Switch or emulator profile IDs
+banned = []
+whitelisted = []
+
+[user.ips]
+# same as usernames but for IP addresses
+banned = []
+whitelisted = []
+
+
+#######################
+# NOT IMPLEMENTED YET #
+#######################
+
+[moons]
+# also called "shines" in the game files
+
+# sync moons between players
+sync = true
+
+# save moons between sessions
+save = false
+
+# the file to save the moons to
+save_file = "./moons.json"
+
+# some moons cause issues if they're synced up such as the
+# moon that opens the door to the Inverted Pyramid in Sand Kingdom.
+# to get around this, this moon won't be synced between players
+excluded = [
+    496
+]
+
+# TODO: make this note make more sense?
+# This is different from your individual save files:
+# this saves the moons to a file and reads from that file when the server restarts.
+# It will then "catch up" all new players who join by giving them all the moons they are missing.
+
+# missing features:
+# shine (moon) sync
+#   shine saving and re-syncing
+# JSON API - unlikely
+# Discord bot - almost certainly never
+
+# these features are missing because this server is meant
+# to be used almost exclusively for hide and seek, not moon syncing

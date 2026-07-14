@@ -1,0 +1,25 @@
+The server state should follow this structure:
+
+- bans
+    - users (list)
+    - ids (list)
+    - ips (list)
+
+- whitelists
+    - active (bool)
+    - users (list)
+    - ips (list)
+    - ips (list)
+
+- max players (int)
+
+- users
+    - id (str)
+    - data
+        - username (str)
+        - coordinates (Vector3)
+        - cappy data (dict OR empty dict, depending on if Cappy is out or not)
+            - cappy anim (str)
+            - cappy coords (Vector3)
+            - cappy rot (Quaternion)
+
