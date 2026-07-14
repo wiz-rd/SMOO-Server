@@ -1,7 +1,5 @@
 import asyncio
 
-import struct
-
 import constants
 import packets
 from math_classes import Vector3, Quaternion
@@ -85,9 +83,6 @@ class Mario:
     def dump(self):
         """Dump the head and body attributes in that order."""
         return self.head, self.body
-
-
-# struct.pack(packets.CapPacket.FORMAT, *Cappy().dump())
 
 
 ##########################

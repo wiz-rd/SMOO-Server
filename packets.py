@@ -32,13 +32,8 @@ class PacketType(IntEnum):
     COMMAND = 12
 
 
-# PACKET_MAPPING = {
-#     PacketType.CONNECT: ,
-#     PacketType.CAP: packets.CapPacket,
-#     # ...
-# }
-
-print(PacketType(1).name)
+# NOTE: this is one way to reverse the enum
+# print(PacketType(1).name)
 
 
 # useful as a sort of constant
@@ -376,7 +371,7 @@ class GamePacket(Packet):
 
     NAME: str = "GAME"
     SIZE: int = 0x42
-    TYPE: int = 4
+    TYPE: int = PacketType.GAME
     STAGE_SIZE: int = 0x40
 
     FORMAT: str = f"<?B{STAGE_SIZE}s"
@@ -405,7 +400,7 @@ class InitPacket(Packet):
 
     NAME: str = "INIT"
     SIZE: int = 2
-    TYPE: int = 1
+    TYPE: int = PacketType.INIT
     FORMAT: str = "<H"
 
     def __init__(self, max_players: int = 0):
@@ -429,7 +424,7 @@ class PlayerPacket(Packet):
 
     NAME: str = "PLAYER"
     SIZE: int = 0x38
-    TYPE: int = 2
+    TYPE: int = PacketType.PLAYER
 
     ACT_SIZE: int = 0x20
     SUB_ACT_SIZE: int = 0x10
@@ -484,6 +479,7 @@ class PlayerPacket(Packet):
 class ShinePacket(Packet):
     NAME: str = "SHINE"
     SIZE: int = 4
+    TYPE: int = PacketType.SHINE
 
     FORMAT: str = "<i"
 
@@ -505,7 +501,7 @@ MoonPacket = ShinePacket
 class TagPacket(Packet):
     NAME: str = "TAG"
     SIZE: int = 5
-    TYPE: int = 5
+    TYPE: int = PacketType.TAG
 
     # Game mode (unsigned byte), tag type (signed byte), is_it (bool), seconds (byte), minutes (ushort)
     FORMAT: str = "Bb?BH"
@@ -546,7 +542,7 @@ class TagPacket(Packet):
 class UnhandledPacket:
     NAME: str = "UNKNOWN"
     SIZE: int = 0
-    TYPE: int = 0
+    TYPE: int = PacketType.UNKNOWN
 
     def __init__(self, data: bytes):
         self.data = data
@@ -554,43 +550,35 @@ class UnhandledPacket:
     # TODO: serialize and deserialize?
 
 
+# NOTE: we're using the packet types from PacketType
+# to avoid magic numbers and make this readable.
+# This means you should be able to make changes to the Enum
+# at the top of this file and it should automatically populate everywhere.
+#
+# I may remove the enum entirely in the future, but for now
+# I like it for how readable it makes the code. But it
+# does seem excessive since each packet now has a NAME attribute.
+# But to be fair, there also probably is almost no lookup-time because
+# it's not in a dictionary and essentially should be similar to
+# hard-coding the integers themselves, but just more readable
 PACKET_TYPES = bidict(
     {
-        # TODO: add the names of each packet to their objects as I add them here
-        0: UnhandledPacket,
-        1: InitPacket,
-        2: PlayerPacket,
-        3: CapPacket,
-        4: GamePacket,
-        5: TagPacket,
-        6: ConnectPacket,
-        7: DisconnectPacket,
-        8: CostumePacket,
-        9: ShinePacket,
-        10: CapturePacket,
-        11: ChangeStagePacket,
-        12: "COMMAND",
+        # TODO: update COMMAND once I know what that entails
+        PacketType.UNKNOWN: UnhandledPacket,
+        PacketType.INIT: InitPacket,
+        PacketType.PLAYER: PlayerPacket,
+        PacketType.CAP: CapPacket,
+        PacketType.GAME: GamePacket,
+        PacketType.TAG: TagPacket,
+        PacketType.CONNECT: ConnectPacket,
+        PacketType.DISCONNECT: DisconnectPacket,
+        PacketType.COSTUME: CostumePacket,
+        PacketType.SHINE: ShinePacket,
+        PacketType.CAPTURE: CapturePacket,
+        PacketType.CHANGE_STAGE: ChangeStagePacket,
+        PacketType.COMMAND: "COMMAND",
     }
 )
-
-# PACKET_TYPES = bidict(
-#     {
-#         # TODO: add the names of each packet to their objects as I add them here
-#         0: UnhandledPacket,
-#         1: InitPacket,
-#         2: PlayerPacket,
-#         3: CapPacket,
-#         4: GamePacket,
-#         5: TagPacket,
-#         6: ConnectPacket,
-#         7: DisconnectPacket,
-#         8: CostumePacket,
-#         9: ShinePacket,
-#         10: CapturePacket,
-#         11: ChangeStagePacket,
-#         12: "COMMAND",
-#     }
-# )
 
 
 def load_header(data: bytes) -> tuple[str, int, int, bytes, bytes]:
