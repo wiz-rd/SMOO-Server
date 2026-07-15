@@ -114,5 +114,5 @@ class Quaternion:
         )
 
     def dump(self):
-        """Dumps the x, y, z, and w values, in that order, as a tuple."""
-        return self.x, self.y, self.z, self.w
+        """Dumps the w, x, y, and z values, in that order, as a tuple."""
+        return self.w, self.x, self.y, self.z

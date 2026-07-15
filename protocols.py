@@ -51,15 +51,16 @@ from math_classes import Vector3, Quaternion
 
 class Player:
     """This class houses all of the packets relevant to players for easy retrieval."""
+
     __slots__ = ("name", "packet", "cappy", "costume", "game")
 
     def __init__(
         self,
         name: str,
-        packet = packets.PlayerPacket(),
-        cappy = packets.CapPacket(),
-        costume = packets.CostumePacket(),
-        game = packets.GamePacket(),
+        packet=packets.PlayerPacket(),
+        cappy=packets.CapPacket(),
+        costume=packets.CostumePacket(),
+        game=packets.GamePacket(),
     ):
         self.name = name
         self.packet = packet
@@ -166,18 +167,17 @@ class FastServerProtocol(asyncio.Protocol):
 
         packet_class: packets.Packet = packets.PACKET_TYPES[int(packet_type_id)]  # type: ignore
 
-        # TODO: delete debugging
-        print("Recieved data:")
-
-        print(f"we got uid: {uid}")
-        print(f"we got packet id: {packet_type_id}")
-        print(f"we got packet size: {db_packet_size}")
-        # print(f"In the data: {data[: constants.TOTAL_HEADER]}")
-
-        # print(f"Payload of {payload}")
-
-        print(f"Projected class: {packet_class}")
-        print(f"Projected name: {packet_class.NAME}")
+        # # TODO: delete debugging
+        # pprint(
+        #     "Recieved data:",
+        #     {
+        #         "uid": uid,
+        #         "id": packet_type_id,
+        #         "size": db_packet_size,
+        #         "class": packet_class,
+        #         "name": packet_class.NAME,
+        #     },
+        # )
 
         # if we don't have a class for it defined, so we're behind or it doesn't exist
         # TODO: handle this better
@@ -255,13 +255,16 @@ class FastServerProtocol(asyncio.Protocol):
         )
 
     def set_player(
-        self, player: Player, broadcast: bool = False, include_self: bool = False
+        self,
+        player: Player,
+        broadcast_packet: packets.Packet = None,
+        include_self: bool = False,
     ):
-        """Sets the player in the shared state."""
+        """Sets the player in the shared state. Broadcasts `packet` if requested."""
         self.server_state["users"][self.user_id] = player
 
-        if broadcast:
-            self.broadcast(include_self)
+        if broadcast_packet:
+            self.broadcast(broadcast_packet, include_self)
 
     ########################
     # PACKET HANDLING HERE #
@@ -374,6 +377,8 @@ class FastServerProtocol(asyncio.Protocol):
         # type hint to use this variable easier
         # ---
         player: Player = self.get_player()
+        # # invert the y packet because for some reason Mario is upside down?
+        # packet.rot = packet.rot.y * -1
 
         # update the player packet itself
         # essentially, we're discarding old player packet data BUT
@@ -402,7 +407,7 @@ class FastServerProtocol(asyncio.Protocol):
         # and server_state_schema for the layout
         player: Player = self.get_player()
         player.costume = packet
-        self.set_player(player, broadcast=True)
+        self.set_player(player, broadcast_packet=packet)
 
     ######
     # GAME
@@ -415,7 +420,7 @@ class FastServerProtocol(asyncio.Protocol):
         # only returns two types anyway
         player = self.get_player()
         player.game = packet
-        self.set_player(player, True)
+        self.set_player(player, broadcast_packet=packet)
 
     ####################
     # REST OF PROTOCOL #
