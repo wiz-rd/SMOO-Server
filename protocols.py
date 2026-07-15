@@ -196,16 +196,18 @@ class FastServerProtocol(asyncio.Protocol):
 
         # TODO: make one of these for each type of packet OR determine a way to do this psuedo-dynamically (probably impossible)
         match packet:
+            case packets.CapPacket():
+                self.handle_cap(packet)
             case packets.ConnectPacket():
                 self.handle_connect(packet)
+            case packets.CostumePacket():
+                self.handle_costume(packet)
             case packets.InitPacket():
                 # I have yet to confirm it but I suspect that
                 # we should not be receiving packets of this type
                 pass
             case packets.PlayerPacket():
                 self.handle_player(packet)
-            case packets.CostumePacket():
-                self.handle_costume(packet)
             case packets.GamePacket():
                 self.handle_game(packet)
             case packets.DisconnectPacket():
@@ -364,6 +366,46 @@ class FastServerProtocol(asyncio.Protocol):
                 )
             )
 
+
+    ######
+    # CAP
+    ######
+
+    # all of these are in alphabetical order EXCEPT
+    # I put them below the connect() method because
+    # it's so much longer than the rest
+
+    def handle_cap(self, packet: packets.CapPacket):
+        """Handles cap packets and broadcasts them."""
+        player = self.get_player()
+        player.cappy = packet
+        self.set_player(player, broadcast_packet=packet)
+
+    ######
+    # COSTUME
+    ######
+
+    def handle_costume(self, packet: packets.CostumePacket):
+        """Handles costume packets and broadcasts them as needed."""
+        # see self.handle_player() for how this function works
+        # and server_state_schema for the layout
+        player: Player = self.get_player()
+        player.costume = packet
+        self.set_player(player, broadcast_packet=packet)
+
+    ######
+    # GAME
+    ######
+
+    def handle_game(self, packet: packets.GamePacket):
+        """Handles the game packet and broadcasts it as needed."""
+        # see self.handle_player() for step-by-step comments
+        # not going to type hint anymore because get_player()
+        # only returns two types anyway
+        player = self.get_player()
+        player.game = packet
+        self.set_player(player, broadcast_packet=packet)
+
     ######
     # PLAYER
     ######
@@ -396,31 +438,6 @@ class FastServerProtocol(asyncio.Protocol):
 
         # announce to everyone the new details of the player
         self.broadcast(player.packet)
-
-    ######
-    # COSTUME
-    ######
-
-    def handle_costume(self, packet: packets.CostumePacket):
-        """Handles costume packets and broadcasts them as needed."""
-        # see self.handle_player() for how this function works
-        # and server_state_schema for the layout
-        player: Player = self.get_player()
-        player.costume = packet
-        self.set_player(player, broadcast_packet=packet)
-
-    ######
-    # GAME
-    ######
-
-    def handle_game(self, packet: packets.GamePacket):
-        """Handles the game packet and broadcasts it as needed."""
-        # see self.handle_player() for step-by-step comments
-        # not going to type hint anymore because get_player()
-        # only returns two types anyway
-        player = self.get_player()
-        player.game = packet
-        self.set_player(player, broadcast_packet=packet)
 
     ####################
     # REST OF PROTOCOL #
