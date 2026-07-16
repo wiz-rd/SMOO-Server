@@ -14,7 +14,10 @@ async def terminal_admin_console(server_state):
     loop = asyncio.get_running_loop()
     reader = asyncio.StreamReader()
     protocol = asyncio.StreamReaderProtocol(reader)
-    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+    try:
+        await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+    except KeyboardInterrupt:
+        print("Exiting...")
 
     print("--- console ---")
     print("Commands: ban list, exit")

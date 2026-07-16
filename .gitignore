@@ -162,3 +162,4 @@ cython_debug/
 # personal removals:
 man_*
 example_code.py
+*remote.txt

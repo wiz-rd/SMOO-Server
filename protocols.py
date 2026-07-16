@@ -391,7 +391,9 @@ class FastServerProtocol(asyncio.Protocol):
         # and server_state_schema for the layout
         player: Player = self.get_player()
         player.costume = packet
-        self.set_player(player, broadcast_packet=packet)
+        # not sure why but it seems like clients include themselves
+        # when broadcasting their outfit
+        self.set_player(player, broadcast_packet=packet, include_self=True)
 
     ######
     # GAME

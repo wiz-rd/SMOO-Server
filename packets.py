@@ -84,6 +84,10 @@ class GamemodeTypes(IntEnum):
 class Packet(Protocol):
     """Base class to handle packets to and from the client."""
 
+    # TODO: see if this would help (test the speed of the current server)
+    # and see if it's only for instance vars or can be for class variables as well
+    # __slots__ = ("NAME", "FORMAT", "SIZE")
+
     NAME: ClassVar[str]
     """The name of the packet in the backend."""
 
@@ -148,7 +152,7 @@ class CapPacket(Packet):
     #     return 0x50
 
     def serialize(self) -> bytes:
-        anim_bytes = self.cap_anim.encode()
+        anim_bytes = bytes.fromhex(self.cap_anim)
 
         return struct.pack(
             CapPacket.FORMAT,
@@ -163,10 +167,11 @@ class CapPacket(Packet):
     def deserialize(self, data: bytes):
         unpacked = struct.unpack(CapPacket.FORMAT, data[: CapPacket.SIZE])
 
-        self.position = Vector3(*unpacked[3:])
+        self.position = Vector3(*unpacked[:3])
         self.rotation = Quaternion(*unpacked[3:7])
         self.cap_out = unpacked[7]
-        self.cap_anim = unpacked[8].decode().strip("\x00")
+        # TODO: make sure this is properly reversable
+        self.cap_anim = unpacked[8].hex().strip("00")
 
 
 class CapturePacket(Packet):
@@ -193,8 +198,10 @@ class CapturePacket(Packet):
         # and removing null bytes at the end.
         self.model_name = (
             struct.unpack(CapturePacket.FORMAT, data[: constants.COSTUME_NAME_SIZE])[0]
+            # NOTE: not using hex because we need to get the actual stage name,
+            # not just convert the bytes to a string
             .decode("utf-8")
-            .rstrip("\x00")
+            .strip("00")
         )
 
 
@@ -599,8 +606,8 @@ def load_header(data: bytes) -> tuple[str, int, int, bytes, bytes]:
     - `uid`
     - `packet_type`
     - `packet_size`
-    - `remaining_packet`
-        - The data left in the packet up until `packet_size`.
+    - `payload`
+        - The data in the packet up until `packet_size`.
     - `remaining_data`
         - All data remaining - even after `packet_size`. Probably
             mostly null bytes.
