@@ -505,18 +505,15 @@ class ShinePacket(Packet):
         self.shine_id = struct.unpack(ShinePacket.FORMAT, data[: ShinePacket.SIZE])[0]
 
 
-# TODO: see if we even want this
-# give this an alias in case we want to use it
-MoonPacket = ShinePacket
-
-
+# TODO: finish this packet
+# refer to https://github.com/Sanae6/SmoOnlineServer/blob/master/Shared/Packet/Packets/TagPacket.cs
 class TagPacket(Packet):
     NAME: str = "TAG"
     SIZE: int = 5
     TYPE: int = PacketType.TAG
 
-    # Game mode (unsigned byte), tag type (signed byte), is_it (bool), seconds (byte), minutes (ushort)
-    FORMAT: str = "Bb?BH"
+    # Game Mode + Tag Type (unsigned byte), is_it (bool), seconds (byte), minutes (ushort)
+    FORMAT: str = "<B?BH"
 
     def __init__(
         self,
@@ -533,10 +530,67 @@ class TagPacket(Packet):
         self.minutes = minutes
 
     def serialize(self) -> bytes:
+        # original C# code:
+        # https://github.com/Sanae6/SmoOnlineServer/blob/master/Shared/Packet/Packets/TagPacket.cs
+        #
+        # NOTE: this is very unusual compared to the other packets
+        # and requires a bit of understanding about bits and bytes
+        # (which I do not have, so bear with me):
+        #
+        # a byte is 8 bits, 0000 0000. Half of of a byte is aptly
+        # called a nibble - 0000. Traditionally, a byte can go up
+        # to 255 if unsigned, 1111 1111, but we don't need a number
+        # that large, I guess, so to save resources we're going to
+        # split a single byte into two nibbles and merge those nibbles
+        # together before sending them to the client. This means
+        # upon recieving them, we'll have to decode them the opposite
+        # of the way we encoded them, so we'll need to perform similar
+        # bit-shifting math on them in `deserialize()`
+
+        # F = 15 in hex, so essentially we're just writing 15 15.
+        # & is a bitwise AND, which means we can essentially use it to
+        # mask for specific values - like if we want to guarentee
+        # one of the nibbles is all 0s
+        # this line should convert game_mode from a traditional Python
+        # int into it's 8-bit equivalent. This means -1 will turn into
+        # 1111 1111, or 255, because bytes cannot really store negative
+        # values unless they have a "space" dedicated for a sign: - or +
+        game_mode_byte = self.game_mode.value & 0xFF
+        # you can test this yourself by opening a Python instance and
+        # running
+        #
+        # > -1 & 0xFF
+        #
+        # it should return 255
+
+        # this is where things get interesting. a GameMode can only be from
+        # -1 to 14, and the highest value a byte can store is 1111, or 15
+        # so if the game mode is anything at all, it'll cap out at 15, or
+        # *only* one nibble: the first half would be unused as 15 in binary
+        # is just 1111. It would be 0000 1111, and the first half would never
+        # be used. So in order to take advantage of that free space, we
+        # can perform a bit shift - literally shift the bits one way or another.
+        # so: bitshift to the left 4 spaces and 0000 1111 becomes 1111 0000
+        game_mode_byte = game_mode_byte << 4
+
+        # now, we can "add" the tag_update value to this byte
+        # (we're limiting it to only be in the second nibble, just to be safe.
+        # That's why it's 0x0F and not 0xFF)
+        tag_update_byte = self.tag_update.value & 0x0F
+
+        # now we merge the two using a bitwise OR. See the following (contrived) example:
+        # 0000 0011
+        # OR
+        # 0010 0000
+        # =
+        # 0010 0011
+        # so we successfully "merge" the two nibbles into one byte, but preserve their contents
+        both = (game_mode_byte | tag_update_byte) & 0xFF
+        # the final 0xFF is to make sure it's just a single byte long
+
         return struct.pack(
             TagPacket.FORMAT,
-            self.game_mode.value,
-            self.tag_update.value,
+            both,
             self.is_it,
             self.seconds,
             self.minutes,
@@ -544,11 +598,36 @@ class TagPacket(Packet):
 
     def deserialize(self, data: bytes):
         unpacked = struct.unpack(TagPacket.FORMAT, data[: TagPacket.SIZE])
-        self.game_mode = GamemodeTypes(unpacked[0])
-        self.tag_update = TagUpdateTypes(unpacked[1])
-        self.is_it = unpacked[2]
-        self.seconds = unpacked[3]
-        self.minutes = unpacked[4]
+
+        # see serialize() for the process here, but basically we do the inverse:
+        # convert it to an 8-bit integer, "grab" the first nibble, and "grab" the second nibble.
+        # convert it to an 8-bit int:
+        both = unpacked[0] & 0xFF
+        # "grab" the first nibble (remember that game mode is the first half of the byte)
+        # so we mask away the second half and shift the four bits on the first half to the
+        # right, thus giving it a number between 0 and 15
+        first_nibble = (both & 0xF0) >> 4
+        # but now we need to make it between -1 and 14
+        # to explain this, we need to look at our number range and the problem really quickly.
+        # when we hit 15, we want this code to "translate" that to -1. Now we COULD do that
+        # with this fun and fancy modulo,
+        #### game_mode_int = ((first_nibble + 1) % 16) - 1
+        # OR we could do it with this simple and readable comparison. Since we're using Python
+        # and value readability over optimizations that may never be used (since the client
+        # maxes out at around 12 users anyway), we're just going to use a simple comparison
+        if first_nibble == 15:
+            self.game_mode = GamemodeTypes(-1)
+        else:
+            self.game_mode = GamemodeTypes(first_nibble)
+
+        # NOW we can finally update the tag type
+        # ---
+        # just mask the bits to give us the latter half
+        self.tag_update = TagUpdateTypes(both & 0x0F)
+
+        self.is_it = unpacked[1]
+        self.seconds = unpacked[2]
+        self.minutes = unpacked[3]
 
 
 class UnhandledPacket:

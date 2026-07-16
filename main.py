@@ -8,7 +8,7 @@ from rich import print as pprint
 import uvloop
 
 from console import terminal_admin_console
-from protocols import FastServerProtocol
+from protocols import TCPServerProtocol
 from resources import DEFAULT_TOML, nested_get, prepare_config, warn
 
 
@@ -52,6 +52,7 @@ async def main():
 
     # NOTE: see ./server_state_schema for the schematic for this
     shared_server_state: dict = {
+        "commands": [],
         "bans": {
             # "any": True,
             "usernames": set(nested_get(config, "user", "names", "banned", default=())),
@@ -84,7 +85,7 @@ async def main():
     port = nested_get(config, "network", "port", default=1027)
 
     # let the game factory use a shared server state that we can access here, too
-    game_protocol_factory = partial(FastServerProtocol, shared_server_state)
+    game_protocol_factory = partial(TCPServerProtocol, shared_server_state)
     # NOTE: may have to set keep_alive to False
     game_server = await loop.create_server(game_protocol_factory, host=ip, port=port)
     print(f"Server active on {ip}:{port}...")

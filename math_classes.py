@@ -8,6 +8,9 @@ import math
 # NOTE: try removing the elifs from the vector calculations if the server is slow.
 # it may speed things up and we can rely on Python native errors anyway
 
+# NOTE: we literally are not using these at all so we probably don't even need any of this stuff.
+# should this be the case, we should either return to tuples or very barebones classes
+
 class Vector3:
     __slots__ = ("x", "y", "z")
 

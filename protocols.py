@@ -202,16 +202,22 @@ class FastServerProtocol(asyncio.Protocol):
                 self.handle_connect(packet)
             case packets.CostumePacket():
                 self.handle_costume(packet)
+            case packets.DisconnectPacket():
+                self.handle_disconnect(packet)
+            case packets.GamePacket():
+                self.handle_game(packet)
             case packets.InitPacket():
                 # I have yet to confirm it but I suspect that
                 # we should not be receiving packets of this type
-                pass
+                self.handle_init(packet)
             case packets.PlayerPacket():
                 self.handle_player(packet)
-            case packets.GamePacket():
-                self.handle_game(packet)
-            case packets.DisconnectPacket():
-                self.disconnect_self()
+            case packets.ShinePacket():
+                self.handle_shine()
+            case packets.TagPacket():
+                self.handle_tag()
+            case packets.UnhandledPacket():
+                self.handle_unhandled()
             case _:
                 # close the connection if it's not a real packet, for now
                 # self.reject()
@@ -366,7 +372,6 @@ class FastServerProtocol(asyncio.Protocol):
                 )
             )
 
-
     ######
     # CAP
     ######
@@ -396,6 +401,18 @@ class FastServerProtocol(asyncio.Protocol):
         self.set_player(player, broadcast_packet=packet, include_self=True)
 
     ######
+    # DISCONNECT
+    ######
+
+    def handle_disconnect(self, packet: packets.DisconnectPacket):
+        """Handles disconnecting for clients."""
+        # NOTE: this could just be moved up to the match-case statement
+        self.broadcast(packet, True)
+        # close the connection with the disconnecting client
+        # TODO: make sure this is right
+        self.transport.close()
+
+    ######
     # GAME
     ######
 
@@ -407,6 +424,14 @@ class FastServerProtocol(asyncio.Protocol):
         player = self.get_player()
         player.game = packet
         self.set_player(player, broadcast_packet=packet)
+
+    ######
+    # INIT
+    ######
+
+    def handle_init(self, packet: packets.InitPacket):
+        """Does nothing for now - not sure this is needed."""
+        return
 
     ######
     # PLAYER
@@ -441,6 +466,32 @@ class FastServerProtocol(asyncio.Protocol):
         # announce to everyone the new details of the player
         self.broadcast(player.packet)
 
+    ######
+    # SHINE
+    ######
+
+    def handle_shine(self, packet: packets.ShinePacket):
+        """Handle shine (moon) packets."""
+        # TODO: make sure that this is right
+        self.broadcast(packet)
+
+    ######
+    # TAG
+    ######
+
+    def handle_tag(self, packet: packets.TagPacket):
+        """Handle the tag packets. For now, just broadcast this to all clients."""
+        # TODO: make sure this is right
+        self.broadcast(packet)
+
+    ######
+    # UNHANDLED
+    ######
+
+    def handle_unhandled(self, packet: packets.UnhandledPacket):
+        """For now, do nothing."""
+        print("Unhandled packet recieved.")
+
     ####################
     # REST OF PROTOCOL #
     ####################
@@ -460,19 +511,6 @@ class FastServerProtocol(asyncio.Protocol):
         else:
             for client in FastServerProtocol.active_connections:
                 client.transport.write(packets.prepare_packet(self.user_id, packet))
-
-    def disconnect_self(self):
-        """Update all clients that the given client disconnected."""
-        FastServerProtocol.active_connections.remove(self)
-
-        # generate a complete disconnect packet
-        disc_packet = packets.prepare_packet(self.user_id, packets.DisconnectPacket())
-
-        for client in FastServerProtocol.active_connections:
-            client.transport.write(disc_packet)
-
-        self.transport.write(disc_packet)
-        self.transport.close()
 
     def connection_lost(self, exc):
         if self in FastServerProtocol.active_connections:
@@ -519,3 +557,20 @@ class FastServerProtocol(asyncio.Protocol):
                     },
                 }
             )
+
+
+# the TCP server
+# NOTE: may be highly redundant
+class TCPServerProtocol(FastServerProtocol, asyncio.Protocol):
+    # everything should be identical to the FastServer protocol, just TCP
+    # except this should be used if the user wants UDP?
+    # NOTE: fact check this - that the TCP server should behave differently
+    # if UDP is used
+    ...
+
+# TODO: remove this? there is a special handshake for UDP and most packets are still sent
+# over TCP
+# the UDP server
+class UDPServerProtocol(FastServerProtocol, asyncio.DatagramProtocol):
+    # same as above just UDP
+    ...
