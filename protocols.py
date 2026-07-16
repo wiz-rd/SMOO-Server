@@ -359,12 +359,14 @@ class FastServerProtocol(asyncio.Protocol):
                     ),
                 )
             )
+
             # current progress in the server file:
             # https://github.com/Sanae6/SmoOnlineServer/blob/master/Server/Server.cs#L300
+
             # update this connection of all other players
             self.transport.write(
                 packets.prepare_packet(
-                    self.user_id,
+                    client.user_id,
                     packets.ConnectPacket(
                         max_players=max_players,
                         client_name=client.username,
@@ -567,6 +569,7 @@ class TCPServerProtocol(FastServerProtocol, asyncio.Protocol):
     # NOTE: fact check this - that the TCP server should behave differently
     # if UDP is used
     ...
+
 
 # TODO: remove this? there is a special handshake for UDP and most packets are still sent
 # over TCP
